@@ -1,0 +1,116 @@
+---
+title: "Basic tidyverse"
+
+---
+
+# Details
+
+- Who did you collaborate with: TYPE NAMES HERE
+- Approximately how much time did you spend on this problem set: ANSWER HERE
+- What, if anything, gave you the most trouble: ANSWER HERE
+
+
+# Task 1: Lord of the Rings, guided
+
+```{r load-libraries-data}
+library(tidyverse)
+
+# Note: Download the four CSV files listed on the webpage for this assignment and place them in your project in a folder named `data`.
+fellowship <- read_csv("data/The_Fellowship_Of_The_Ring.csv")
+tt <- read_csv("data/The_Two_Towers.csv")
+rotk <- read_csv("data/The_Return_Of_The_King.csv")
+```
+
+*By only clicking on the data frames in the environment panel,* look at each of these data frames and answer these questions:
+
+- What's the total number of words spoken by male hobbits in all three movies?
+- Does a certain `Race` dominate a movie? Does the dominant `Race` differ across the movies?
+- How well would your approach scale if I provided you with updated data with more movies (e.g. *The Hobbit* trilogy) or with all the races (e.g. dwarves, orcs, dragons, etc.)?
+
+```{r tidyify}
+# bind_rows() stacks a bunch of data frames on top of each other
+# gather() rearranges the data into long, tidy format
+lotr <- bind_rows(fellowship, tt, rotk) %>%
+  gather(key = 'Gender', value = 'Words', Female, Male)
+```
+
+With the data in tidy format, it's far easier to work with since you can use the filme, gender, and race to aggregate the data. For instance, what's the total number of words spoken by male hobbits?
+
+```{r male-hobbits}
+lotr %>% group_by(Gender, Race)%>%filter(Gender=="Male",Race=="Hobbit")%>%summarise(total_words=sum(Words))
+
+```
+
+What's the difference between these two chunks?
+
+```{r gender-race-pct1}
+lotr %>%
+  group_by(Gender, Race) %>%
+  summarise(total_words = sum(Words)) %>%
+  mutate(percent = total_words / sum(total_words))
+```
+
+```{r gender-race-pct2}
+lotr %>%
+  group_by(Gender, Race) %>%
+  summarise(total_words = sum(Words)) %>%
+  ungroup() %>%
+  mutate(percent = total_words / sum(total_words))
+```
+
+Tidy data makes it easier to plot aggregates too:
+
+```{r plot-gender-race}
+lotr_gender_race <- lotr %>%
+  group_by(Gender, Race) %>%
+  summarise(total_words = sum(Words)) %>%
+  ungroup() %>%
+  mutate(percent = total_words / sum(total_words))
+
+ggplot(lotr_gender_race, aes(x = Gender, y = total_words, fill = Race)) +
+  geom_col(position = "dodge")
+
+# BONUS PRO TIP
+# It's possible to add a second y-axis in ggplot as long as it's a direct
+# transformation of the original y-axis. The syntax is wonky and arcane, but it
+# works. Add this as a layer to the plot above and see what happens:
+#
+# scale_y_continuous(sec.axis = sec_axis(~ . / sum(lotr_gender_race$total_words), labels=scales::percent))
+```
+
+Using the tidy *Lord of the Rings* data, answer these questions and *make a plot for each*:
+
+Does a certain race dominate a movie? Does the dominant race differ across the movies?
+
+```{r race-movies}
+lotr<-rbind(fellowship,tt,rotk)
+mrace<-lotr %>% mutate(totalwords=Female+Male)%>%group_by(Film)%>%mutate(percent=totalwords/sum(totalwords))
+ggplot(mrace, aes(x = Film, y = totalwords, fill = Race)) +
+  geom_col(position = "dodge")
+```
+
+Does a certain gender dominate a movie? (lolz of course it does, but still, calculate it)
+
+```{r gender-movies}
+mgender<-lotr %>% gather(key = "Gender", value = "words",Female,Male)%>%group_by(Film,Gender)%>%summarise(totalwords=sum(words))%>% mutate(percent=totalwords/sum(totalwords))
+ggplot(mgender,aes(x=Film,y=totalwords,fill=Gender))+geom_col(position = "dodge")
+```
+
+What's the average number of words spoken by female elves? (hint: instead of creating a variable to determine the `sum()` in `summarize()`, use `mean()`)
+
+```{r race-gender-mean}
+rgm<-lotr %>%gather(key="Gender",value="words",Female,Male) %>%  filter(Race=="Elf",Gender=="Female")%>%summarise(mean=mean(words))
+
+#for any race gender
+
+rgm2<-lotr %>%gather(key="Gender",value="words",Female,Male) %>%  group_by(Race,Gender)%>%summarise(mean=mean(words))
+ggplot(rgm2,aes(x=Race,y=mean,fill=Gender))+geom_col(position = "dodge")
+```
+
+Show a summary of the number of words spoken by each race and gender across all three movies (hint: you'll have to group by all three variables, and you'll probably need to use one as a facet in your plot)
+
+```{r race-gender-films}
+rgm2<-lotr %>%gather(key="Gender",value="words",Female,Male)
+ggplot(rgm2,aes(x=Film,y=words))+geom_point(aes(colour=factor(Race)),size=4)+facet_grid(Gender~.)+guides(colour=guide_legend(title=""))
+```
+
