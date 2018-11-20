@@ -3,11 +3,6 @@ title: "fancy plots"
 
 ---
 
-# Details
-
-- Who did you collaborate with: xxxxx
-- Approximately how much time did you spend on this problem set: xxxxx
-- What, if anything, gave you the most trouble: xxxxx
 
 
 # Hans Rosling redux
