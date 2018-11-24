@@ -1,0 +1,300 @@
+---
+title: "Basic tidyverse"
+
+---
+
+# about the data
+
+Jason Baumgartner released the dataset of tweets from all U.S. senator, representatives, governors, cabinet members, secretaties of states and over 100 international leaders. over 2 million tweets spanning back to 2009.
+
+The dataset can be downloaded via this link: http://t.cn/EAY2jtB
+
+
+# Load data, and some cleasing.
+
+```{r load-libraries-data}
+library(jsonlite)
+library(tidyverse)
+library(tm)
+library(SnowballC)
+library(tidytext)
+library(ggplot2)
+library(wordcloud)
+library(fpc)
+library(reshape2)
+library(patchwork)
+library(topicmodels)
+
+# Note: data format is json. write to txt
+getbyyear<-function(year){
+ con_in <- file("caravan_tweets.ndjson")
+  
+  filename<-paste("fulltext",year,sep = "")
+  filename<-paste(filename,".txt",sep="")
+con_out<-filename
+stream_in(con_in, handler = function(df){
+dfout<-df[grep(year,df$created_at),c("id","favorite_count","retweet_count","created_at","full_text")]
+dfout$full_text<-gsub("\n","",dfout$full_text)
+ write.table(dfout,file=con_out, append=TRUE,sep="\t",row.names=FALSE,col.names=FALSE,fileEncoding = "UTF-8")}, pagesize = 100)
+
+}
+
+year<-"2018"
+getbyyear(year)
+
+raw <- read.table("fulltext2018.txt", stringsAsFactors = FALSE,sep="\t",fill=TRUE,fileEncoding="UTF-8",encoding="UTF-8")#ÓÐÈÕÎÄ¡­¡­
+
+#select text, remove "< > with content, remove  "@someone:", remove all non-ascii words.
+#slow with %>%
+#txt<-raw %>% select(V5) %>% gsub("<[^>]*>","",.) %>% gsub("@.*[^:]:","",.) %>% iconv("UTF-8", "ASCII", sub="")
+
+raw2<-raw$V5
+raw2<-gsub("<[^>]*>","",raw2)
+raw2<-gsub("@.*[^:]:","",raw2)
+raw2<-gsub("http[[:alnum:]]*", "", raw2)
+raw3<-iconv(raw2, "UTF-8", "ASCII", sub="")
+corpus <- Corpus(VectorSource(raw3))
+corpus_clean <- tm_map(corpus, content_transformer(tolower))
+corpus_clean <- tm_map(corpus_clean, removeNumbers)
+mystopwords<-c(stopwords("english"),"rt","caravan")#remove rt, remove caravan.
+corpus_clean <- tm_map(corpus_clean, removeWords, mystopwords)
+corpus_clean <- tm_map(corpus_clean, removePunctuation)
+
+```
+
+#quick glimpse of words people used 
+```{r}
+
+wordcloud(corpus_clean, min.freq = 500, max.words=100,random.order = FALSE)
+
+#try to use virtual memory
+#memory.limit(102400)
+
+#try sample
+#set.seed(1234)
+#sample<-sample(1:1397997,size=500000)
+#sample_corpus<-corpus_clean[sample]
+```
+view word frequency.
+```{r}
+
+# word frequency in table
+dtm <- DocumentTermMatrix(corpus_clean)#, control = list(weighting =weightTfIdf)
+dtm1<- dtm%>%removeSparseTerms( sparse=0.99)%>%as.matrix()
+frequency<-dtm1%>%colSums()%>%sort(decreasing = TRUE)
+
+frequency<-as.data.frame(frequency[1:15])
+
+ggplot(frequency)+geom_col(aes(x=factor(rownames(frequency),levels = rownames(frequency)),y=frequency[,1],fill="red"))+labs(x="words",y="frequency")+guides(fill=FALSE)
+
+```
+#what are they talking about?
+try with 10 clusters.
+```{r}
+set.seed(1234)
+sample<-sample(1:1397997,size=100000)
+sample_corpus<-corpus_clean[sample]
+
+#sample
+DTM.sample<-DocumentTermMatrix(sample_corpus)
+DTM.sample<- removeSparseTerms(DTM.sample, sparse=0.99)
+DTM.matrix<- as.matrix(DTM.sample)
+
+#with kmeans start with 10 clusters
+cl<- kmeans(DTM.matrix,10,nstart = 25)
+table(cl$cluster)
+
+showcenters<-function(centers){
+  centers<-as.matrix(centers)
+d <- dist(centers,method="euclidean")
+temp<-cmdscale(d)
+x<-temp[,1]
+y<-temp[,2]
+
+ggplot(data.frame(x,y),aes(x,y))+geom_point(size=3,alpha=0.8,aes(color=factor(row.names(cl$centers),levels = row.names(cl$centers))))+guides(color=FALSE)
+
+}
+showcenters(cl$centers)
+```
+try with 4 clusters.
+```{r}
+
+#try 4 clusters
+cl<- kmeans(DTM.matrix,4,nstart = 25)
+table(cl$cluster)
+
+showcenters(cl$centers)
+```
+
+or try train  with pamk
+```{r}
+
+
+dtm.matrix2<-DTM.matrix[1:20000,] # pamk receive no more than 65536 observations
+p<-pamk(dtm.matrix2,krange=2:10,criterion="asw", usepam=FALSE,
+     scaling=FALSE, diss=FALSE)
+cl<- kmeans(DTM.matrix,p$nc,nstart = 25)
+
+
+cl_one<-DTM.sample[cl$cluster==1,]
+cl_one_tf<-cl_one%>%as.matrix()%>%colSums()%>%sort(decreasing = TRUE)%>%as.data.frame(stringAsFactors=FALSE)
+
+words_one<-rownames(cl_one_tf)[2:21]
+freq_one<-cl_one_tf[,1][2:21]
+p1<-ggplot()+geom_point(aes(x=factor(words_one,levels = words_one),y=freq_one,fill="red"))+labs(x="words",y="frequency")+coord_flip()+guides(fill=FALSE)
+
+
+
+cl_two<-DTM.sample[cl$cluster==2,]
+cl_two_tf<-cl_two%>%as.matrix()%>%colSums()%>%sort(decreasing = TRUE)%>%as.data.frame(stringAsFactors=FALSE)
+
+words_two<-rownames(cl_two_tf)[2:21]
+freq_two<-cl_two_tf[,1][2:21]
+p2<-ggplot()+geom_point(aes(x=factor(words_two,levels = words_two),y=freq_two,fill="red"))+labs(x="words",y="frequency")+coord_flip()+guides(fill=FALSE)
+
+
+p1+p2+plot_layout(ncol=1)
+
+```
+it seems to make sense. Look more.
+```{r}
+
+
+centers<-cl$centers
+table(cl$cluster)
+
+showwords<-function(centers,nc){
+centers<-as.data.frame(centers)
+centers$ncl<-factor(1:nc)
+x_y<-filter(as.data.frame(melt(centers,id=c("ncl"),measure.vars=1:132,variable.name="word",value.name = "value")),value>0 & value<2)
+
+qplot(word,log(value),data=x_y,fill=factor(ncl),color=factor(ncl))
+}
+
+
+showwords(centers,p$nc)
+showcenters(centers)
+
+```
+emmm,not so good. try tf-idf.
+```{r}
+TDM.sample<-TermDocumentMatrix(sample_corpus)
+TDM.sample<- removeSparseTerms(TDM.sample, sparse=0.99)
+tfidfMatrix<-t(weightTfIdf(TDM.sample,normalize = FALSE))
+p<-pamk(tfidfMatrix[1:50000,],krange=2:10,criterion="asw", usepam=FALSE,
+     scaling=FALSE, diss=FALSE)
+
+cl<- kmeans(tfidfMatrix,p$nc,nstart = 25)
+centers<-cl$centers
+showwords(centers,p$nc)
+showcenters(cl$centers)
+#qplot(word,log(value),data=x_y,fill=factor(ncl),color=factor(ncl))
+
+```
+Better. Try scale.
+```{r}
+TDM.sample<-TermDocumentMatrix(sample_corpus)
+TDM.sample<- removeSparseTerms(TDM.sample, sparse=0.99)
+tfidfMatrix<-t(weightTfIdf(TDM.sample,normalize = TRUE))
+p<-pamk(tfidfMatrix[1:50000,],krange=2:10,criterion="asw", usepam=FALSE,
+     scaling=TRUE, diss=FALSE)
+
+cl<- kmeans(tfidfMatrix,p$nc,nstart = 25)
+centers<-cl$centers
+showwords(centers,p$nc)
+showcenters(cl$centers)
+
+```
+
+emm, giant one group. even worse p$crit. So keep tfidf, no scalilng.
+see what are they talking about in each group. with tfidf clusters.
+```{r}
+
+TDM.sample<-TermDocumentMatrix(sample_corpus)
+TDM.sample<- removeSparseTerms(TDM.sample, sparse=0.99)
+tfidfMatrix<-t(weightTfIdf(TDM.sample,normalize = FALSE))
+p<-pamk(tfidfMatrix[1:50000,],krange=2:10,criterion="asw", usepam=FALSE,
+     scaling=FALSE, diss=FALSE)
+
+cl<- kmeans(tfidfMatrix,p$nc,nstart = 25)
+
+
+for(i in 1:p$nc)
+{
+
+tf<-cl$cluster==i
+cls<-sample_corpus[tf]
+wordcloud(cls,max.words = 50)
+'''
+cl_one<-DocumentTermMatrix(cls)[1:1000,]
+cl_one_tf<-cl_one%>%as.matrix()%>%colSums()%>%sort(decreasing = TRUE)%>%as.data.frame(stringAsFactors=FALSE)
+
+words_one<-rownames(cl_one_tf)[1:20]
+freq_one<-cl_one_tf[,1][1:20]
+ggplot()+geom_point(aes(x=factor(words_one,levels = words_one),y=freq_one,fill="red"))+labs(x="words",y="frequency")+coord_flip()+guides(fill=FALSE)
+'''
+
+}
+
+```
+
+#topic models.
+what topics are concerned.
+```{r}
+
+DTM.sample<-DocumentTermMatrix(sample_corpus)
+DTM.sample<- removeSparseTerms(DTM.sample, sparse=0.99)
+DTM.sample<-DTM.sample[-which(rowSums(as.matrix(DTM.sample))==0),]
+
+caravan_lda<- LDA(DTM.sample, k = 10, control = list(seed = 1234))
+caravan_topics <- tidy(caravan_lda, matrix = "beta")
+
+top_terms <- caravan_topics %>%
+  filter(!is.na(term)) %>% 
+  group_by(topic) %>%
+  top_n(10, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+
+
+top_terms %>% 
+  group_by(topic) %>% 
+  nest(term) %>% 
+  mutate(words = data %>% map_chr(~ paste(.$term, collapse = ", "))) %>% 
+  select(-data) %>% 
+  pander::pandoc.table()
+
+top_terms %>%
+  mutate(term = reorder(term, beta)) %>%
+  ggplot(aes(term, beta, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  labs(x = NULL, y = "LDA beta (word importance in topic)") +
+  theme_minimal() +
+  facet_wrap(~ topic, scales = "free")+coord_flip()
+  ggsave("lda.pdf")
+```
+#retweet or favorite?
+```{r}
+favcount<-na.omit(raw$V2)
+favcount<-filter(as.data.frame(favcount),favcount>0 )
+ggplot(favcount,aes(x=favcount))+geom_histogram(color="black",fill="white")+scale_x_log10()+xlab(label="log(favorite count)")
+
+
+retcount<-na.omit(raw$V3)
+retcount<-filter(as.data.frame(retcount),retcount>0 )
+ggplot(retcount,aes(x=retcount))+geom_histogram(color="black",fill="white")+scale_x_log10()+xlab(label="log(retweet count)")
+```
+retweet more. favorite less. we can further look into the intersection of retweet and favorite with proper data.
+#words of each month/year. only got 2 months in 2018(oct and Nov) . 
+
+```{r}
+months<-substr(raw$V4,start = 5, stop=7)
+octindex<-months=="Oct"
+novindex<-months=="Nov"
+oct_cor<-corpus_clean[octindex]
+nov_cor<-corpus_clean[novindex]
+
+wordcloud(oct_cor, min.freq = 5000, max.words=100,random.order = FALSE)
+wordcloud(nov_cor, min.freq = 5000, max.words=100,random.order = FALSE)
+```
+it seems that Mexico is not that important in November, people start talking about campaign/election.

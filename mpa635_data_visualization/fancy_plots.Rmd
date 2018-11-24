@@ -27,7 +27,7 @@ Plot a histogram of life expectancy in 1997 (`lifeExp`). Choose an appropriate n
 
 ```{r lifeexp-hist}
 ggplot(gapminder_1997, aes(x = lifeExp)) +
-  geom_histogram(bins = 13)+aes(color="red")+guides(color=FALSE)
+  geom_histogram(bins = 13,color="red")+guides(color=FALSE)
 ```
 
 Plot a density plot of life expectancy in 1997. Fill it with some color so it doesn't look sad and empty.
@@ -42,7 +42,7 @@ ggplot(gapminder_1997)+geom_density(aes(x=lifeExp,fill=continent))
 Plot a histogram of GDP per capita in 1997 (`gdpPercap`). Choose an appropriate number of bins.
 
 ```{r gdp-hist}
-ggplot(gapminder_1997)+geom_histogram(aes(x=gdpPercap),bins = 30)+aes(color="red")+guides(color=FALSE)
+ggplot(gapminder_1997)+geom_histogram(aes(x=gdpPercap),bins = 30,color="red")+guides(color=FALSE)
 ```
 
 Plot a density plot of GDP per capita in 1997.
